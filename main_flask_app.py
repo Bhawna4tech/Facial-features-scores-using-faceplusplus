@@ -5,6 +5,9 @@ from flask import Flask, render_template, request,send_from_directory, redirect,
 from werkzeug import secure_filename
 from facepp import API, File
 from pprint import pformat
+import time
+import math
+import csv
 
 app = Flask(__name__)
 
@@ -58,21 +61,90 @@ def processing(name):
 	api = API(API_KEY, API_SECRET)
 	#url = "http://blogs.reuters.com/great-debate/files/2013/07/obama-best.jpg"
 	
-	result = api.detection.detect(img = File(os.path.join('uploads/',str(name)))) #to detect   local images
+	#result = api.detection.detect(img = File(os.path.join('uploads/',str(name)))) #to detect   local images
 	#result = api.detection.detect(url=url)  to detect online images
-	return print_result(result)
+	#return attributeExtractionToCsv(result)
 	
-	#return os.path.join('uploads/',name)
-	#api.group.delete(group_name = 'test')
-	#api.person.delete(person_name = [i[0] for i in PERSONS])
+	fields = ['File Name' , 'Face Id' , 'Distance b/w left eye and nose' , 'Distance b/w right eye and nose' , 'Distance b/w nose and left side of mouth' , 'Distance b/w nose and right side of mouth']
+	initializeTrainedCSV(fields)
+	
+	for filename in os.listdir('Training dataset'):
+		if filename.endswith(".jpg") or filename.endswith(".png"):
+			result = api.detection.detect(img = File(os.path.join('Training dataset', filename))) #to detect   local images
+			attributeExtractionToCsv(result,fields,filename)
+		else:
+			continue
+	return uploaded_file()
+	#return print_result(result)
 
+def attributeExtractionToCsv(result,fields,filename):
+	base_height = 48.787879
+	face_id = result['face'][0]['face_id']
+	eye_left_x = result['face'][0]['position']['eye_left']['x']
+	eye_left_y = result['face'][0]['position']['eye_left']['y']
+	eye_right_x = result['face'][0]['position']['eye_right']['x']
+	eye_right_y = result['face'][0]['position']['eye_right']['y']
+	nose_x = result['face'][0]['position']['nose']['x']
+	nose_y = result['face'][0]['position']['nose']['y']
+	mouth_left_x = result['face'][0]['position']['mouth_left']['x']
+	mouth_left_y = result['face'][0]['position']['mouth_left']['y']
+	mouth_right_x = result['face'][0]['position']['mouth_right']['x']
+	mouth_right_y = result['face'][0]['position']['mouth_right']['y']
+	sample_height = result['face'][0]['position']['height']
+	
+	dle_n = math.sqrt(((eye_left_x-nose_x)*(eye_left_x-nose_x))+((eye_left_y-nose_y)*(eye_left_y-nose_y)))
+	dre_n = math.sqrt(((eye_right_x-nose_x)*(eye_right_x-nose_x))+((eye_right_y-nose_y)*(eye_right_y-nose_y)))
+	dn_ml = math.sqrt(((nose_x-mouth_left_x)*(nose_x-mouth_left_x))+((nose_y-mouth_left_y)*(nose_y-mouth_left_y)))
+	dn_mr = math.sqrt(((nose_x-mouth_right_x)*(nose_x-mouth_right_x))+((nose_y-mouth_right_y)*(nose_y-mouth_right_y)))
+	
+	csv_details = [{
+	'File Name' : filename,
+	'Face Id' : face_id,
+	'Distance b/w left eye and nose' : dle_n *(base_height/sample_height),
+	'Distance b/w right eye and nose' : dre_n *(base_height/sample_height),
+	'Distance b/w nose and left side of mouth' : dn_ml *(base_height/sample_height),
+	'Distance b/w nose and right side of mouth' : dn_mr *(base_height/sample_height)
+	}]
+	
+	writeToCSV("trainedData.csv", fields, csv_details)
+	
+	#return render_template('csvToTable.html',result = csv_details)
 
+def writeToCSV(fileName, fields, csv_details):
+	with open(fileName,'a') as csvfile:
+		writer = csv.DictWriter(csvfile,fieldnames = fields)
+		writer.writerows(csv_details)
+		
+def initializeTrainedCSV(fields):
+	with open("trainedData.csv",'w') as csvfile:
+		writer = csv.DictWriter(csvfile,fieldnames = fields)
+		writer.writeheader()
+		
+def uploaded_file():
+	reader = csv.reader(open("trainedData.csv"))
+	htmlfile = open("templates/csvpage.html","w")
+	rownum = 0
+	htmlfile.write('<table>')
+	for row in reader: 
+		if rownum == 0:
+			htmlfile.write('<tr>')
+		  	for column in row:
+  				htmlfile.write('<th>' + column + '</th>')
+		  	htmlfile.write('</tr>')
+	  	else:
+	  		htmlfile.write('<tr>')	
+  			for column in row:
+  				htmlfile.write('<td>' + column + '</td>')
+	 		htmlfile.write('</tr>')
+		rownum += 1
+	htmlfile.write('</table>')
+	print "Created " + str(rownum) + " row table."
+	htmlfile.close()
+	return render_template('csvpage.html')
+	
 if __name__ == '__main__':
     app.run(
         host="0.0.0.0",
         port=int("80"),
         debug=True
     )
-
-							   
-							   
